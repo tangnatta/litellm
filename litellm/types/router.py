@@ -295,6 +295,14 @@ class CredentialLiteLLMParams(BaseModel):
     ## IBM WATSONX ##
     watsonx_region_name: str | None = None
 
+    ## GENERIC OAUTH2 (refresh_token grant) ##
+    oauth2_token_endpoint: str | None = None
+    oauth2_refresh_token: str | None = None
+    oauth2_client_id: str | None = None
+    oauth2_client_secret: str | None = None
+    oauth2_scope: str | None = None
+    oauth2_auth_style: Literal["basic", "body"] | None = None
+
 
 _RESERVED_INIT_KEYS: Final = frozenset({"self", "params", "__class__"})
 
@@ -499,6 +507,13 @@ class LiteLLMParamsTypedDict(TypedDict, total=False):
     embedding_model: str | None
     ## IBM WATSONX ##
     watsonx_region_name: str | None
+    ## GENERIC OAUTH2 (refresh_token grant) ##
+    oauth2_token_endpoint: ReadOnly[str | None]
+    oauth2_refresh_token: ReadOnly[str | None]
+    oauth2_client_id: ReadOnly[str | None]
+    oauth2_client_secret: ReadOnly[str | None]
+    oauth2_scope: ReadOnly[str | None]
+    oauth2_auth_style: ReadOnly[Literal["basic", "body"] | None]
     ## CUSTOM PRICING ##
     input_cost_per_token: float | None
     output_cost_per_token: float | None

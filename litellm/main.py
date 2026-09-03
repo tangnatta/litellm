@@ -222,6 +222,11 @@ from .llms.oci.chat.transformation import OCIChatConfig
 from .llms.ollama.completion import handler as ollama
 from .llms.oobabooga.chat import oobabooga
 from .llms.openai.completion.handler import OpenAITextCompletion
+from .llms.openai.generic_oauth2 import (
+    GenericOAuth2Error,
+    get_generic_oauth2_bearer_token,
+    resolve_generic_oauth2_config,
+)
 from .llms.openai.image_variations.handler import OpenAIImageVariationsHandler
 from .llms.openai.openai import OpenAIChatCompletion
 from .llms.openai.transcriptions.handler import OpenAIAudioTranscription
@@ -2524,12 +2529,23 @@ def _complete_custom_openai(
     )
     openai.organization = organization
     # set API KEY
-    api_key = (
-        api_key
-        or litellm.api_key  # for deepinfra/perplexity/anyscale/friendliai we check in get_llm_provider and pass in the api key from there
-        or litellm.openai_key
-        or get_secret("OPENAI_API_KEY")
-    )
+    oauth2_config: Final = resolve_generic_oauth2_config(litellm_params)
+    if oauth2_config is not None:
+        try:
+            api_key = get_generic_oauth2_bearer_token(oauth2_config)
+        except GenericOAuth2Error as e:
+            raise litellm.AuthenticationError(
+                message=str(e),
+                llm_provider=custom_llm_provider or "custom_openai",
+                model=model,
+            ) from e
+    else:
+        api_key = (
+            api_key
+            or litellm.api_key  # for deepinfra/perplexity/anyscale/friendliai we check in get_llm_provider and pass in the api key from there
+            or litellm.openai_key
+            or get_secret("OPENAI_API_KEY")
+        )
 
     headers = headers or litellm.headers
 

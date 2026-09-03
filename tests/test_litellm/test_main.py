@@ -3237,3 +3237,36 @@ def test_stream_chunk_builder_prices_alias_from_openai_sdk_usage_chunk():
     assert response.usage.completion_tokens == 60
     assert getattr(response.usage, "cost", None) == pytest.approx(0.000704)
     assert response._hidden_params["response_cost"] == pytest.approx(0.000704)
+
+
+def test_complete_custom_openai_resolves_oauth2_bearer_token_into_api_key(
+    respx_mock: respx.MockRouter,
+):
+    """_complete_custom_openai must mint an OAuth2 bearer token from
+    oauth2_token_endpoint/oauth2_refresh_token and use it as the API key
+    that reaches the OpenAI SDK client, instead of any static api_key."""
+    from litellm.llms.openai.generic_oauth2 import _OAUTH2_TOKEN_CACHE
+
+    _OAUTH2_TOKEN_CACHE.flush_cache()
+    token_route: Final = respx_mock.post("https://idp.example.com/oauth/token").mock(
+        return_value=httpx.Response(200, json={"access_token": "minted-token", "expires_in": 3600})
+    )
+    completion_route: Final = respx_mock.post("https://my-custom-endpoint.example.com/v1/chat/completions").mock(
+        return_value=_mocked_openai_chat_response("my-custom-model")
+    )
+
+    response: Final = litellm.completion(
+        model="my-custom-model",
+        custom_llm_provider="custom_openai",
+        api_base="https://my-custom-endpoint.example.com/v1",
+        api_key="sk-should-be-ignored",
+        oauth2_token_endpoint="https://idp.example.com/oauth/token",
+        oauth2_refresh_token="refresh-1",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+
+    assert response.choices[0].message.content == "Hello from mocked response!"
+    assert token_route.called
+    auth_header: Final = completion_route.calls.last.request.headers["Authorization"]
+    assert auth_header == "Bearer minted-token"
+    _OAUTH2_TOKEN_CACHE.flush_cache()

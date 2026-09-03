@@ -734,7 +734,24 @@ class OpenAIGPTConfig(BaseLLMModelInfo, BaseConfig):
         api_key: str | None = None,
         api_base: str | None = None,
     ) -> dict:
-        if api_key is not None:
+        from litellm.llms.openai.generic_oauth2 import (
+            GenericOAuth2Error,
+            get_generic_oauth2_bearer_token,
+            resolve_generic_oauth2_config,
+        )
+
+        oauth2_config: Final = resolve_generic_oauth2_config(litellm_params)
+        if oauth2_config is not None:
+            try:
+                bearer_token: Final = get_generic_oauth2_bearer_token(oauth2_config)
+                headers["Authorization"] = f"Bearer {bearer_token}"  # rebind-ok: mirrors the elif branch below
+            except GenericOAuth2Error as e:
+                raise litellm.AuthenticationError(
+                    message=str(e),
+                    llm_provider="custom_openai",
+                    model=model,
+                ) from e
+        elif api_key is not None:
             headers["Authorization"] = f"Bearer {api_key}"
 
         # Ensure Content-Type is set to application/json

@@ -3,7 +3,9 @@ Tests for OpenAI GPT transformation (litellm/llms/openai/chat/gpt_transformation
 """
 
 
+import httpx
 import pytest
+import respx
 
 
 import litellm
@@ -1281,3 +1283,67 @@ class TestToolSchemaCombinatorFlatteningForOpenAI:
         parameters = request["tools"][0]["function"]["parameters"]
         assert "anyOf" not in parameters
         assert set(parameters["properties"]) == {"id", "enabled", "schedule"}
+
+
+class TestValidateEnvironmentGenericOAuth2:
+    """OpenAIGPTConfig.validate_environment mints an OAuth2 bearer token
+    for a custom endpoint when refresh_token OAuth2 fields are configured,
+    for parity with the primary wiring in litellm.main._complete_custom_openai."""
+
+    TOKEN_URL = "https://idp.example.com/oauth/token"
+
+    def setup_method(self):
+        from litellm.llms.openai.generic_oauth2 import _OAUTH2_TOKEN_CACHE
+
+        self.config = OpenAIGPTConfig()
+        _OAUTH2_TOKEN_CACHE.flush_cache()
+
+    def teardown_method(self):
+        from litellm.llms.openai.generic_oauth2 import _OAUTH2_TOKEN_CACHE
+
+        _OAUTH2_TOKEN_CACHE.flush_cache()
+
+    @respx.mock
+    def test_mints_bearer_when_oauth2_configured(self):
+        respx.post(self.TOKEN_URL).mock(
+            return_value=httpx.Response(200, json={"access_token": "minted-token", "expires_in": 3600})
+        )
+        headers = self.config.validate_environment(
+            headers={},
+            model="my-custom-model",
+            messages=[{"role": "user", "content": "hi"}],
+            optional_params={},
+            litellm_params={
+                "oauth2_token_endpoint": self.TOKEN_URL,
+                "oauth2_refresh_token": "refresh-1",
+            },
+            api_key="sk-should-be-ignored",
+        )
+        assert headers["Authorization"] == "Bearer minted-token"
+
+    def test_falls_back_to_api_key_when_oauth2_not_configured(self):
+        headers = self.config.validate_environment(
+            headers={},
+            model="my-custom-model",
+            messages=[{"role": "user", "content": "hi"}],
+            optional_params={},
+            litellm_params={},
+            api_key="sk-static",
+        )
+        assert headers["Authorization"] == "Bearer sk-static"
+
+    @respx.mock
+    def test_token_refresh_failure_raises_authentication_error(self):
+        respx.post(self.TOKEN_URL).mock(return_value=httpx.Response(401, text="invalid_grant"))
+        with pytest.raises(litellm.AuthenticationError):
+            self.config.validate_environment(
+                headers={},
+                model="my-custom-model",
+                messages=[{"role": "user", "content": "hi"}],
+                optional_params={},
+                litellm_params={
+                    "oauth2_token_endpoint": self.TOKEN_URL,
+                    "oauth2_refresh_token": "refresh-1",
+                },
+                api_key=None,
+            )

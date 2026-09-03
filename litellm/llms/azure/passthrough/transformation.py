@@ -62,7 +62,7 @@ class AzurePassthroughConfig(BasePassthroughConfig):
     ) -> dict:
         return BaseAzureLLM._base_validate_azure_environment(
             headers=headers,
-            litellm_params=GenericLiteLLMParams(**{**litellm_params, "api_key": api_key}),
+            litellm_params=GenericLiteLLMParams(**{**litellm_params, "api_key": api_key}),  # pyright: ignore[reportArgumentType]  # litellm_params is a bare untyped dict; every GenericLiteLLMParams field already mismatches its declared type here, not just the new oauth2 fields
         )
 
     @staticmethod

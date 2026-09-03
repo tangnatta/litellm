@@ -24,10 +24,22 @@ AWS_CREDENTIAL_KWARGS_KEYS: Final = frozenset(
 # The per-deployment Rust opt-in.
 RUST_KWARG_KEY: Final = "rust"
 
+# Generic OAuth2 (refresh_token grant) for custom OpenAI-compatible endpoints.
+GENERIC_OAUTH2_KWARGS_KEYS: Final = frozenset(
+    {
+        "oauth2_token_endpoint",
+        "oauth2_refresh_token",
+        "oauth2_client_id",
+        "oauth2_client_secret",
+        "oauth2_scope",
+        "oauth2_auth_style",
+    }
+)
+
 # Keys `completion()` forwards from its own kwargs into `get_litellm_params`,
 # which are otherwise invisible to it because that call site passes explicit
 # named arguments rather than `**kwargs`.
-FORWARDED_KWARGS_KEYS: Final = AWS_CREDENTIAL_KWARGS_KEYS | frozenset({RUST_KWARG_KEY})
+FORWARDED_KWARGS_KEYS: Final = AWS_CREDENTIAL_KWARGS_KEYS | frozenset({RUST_KWARG_KEY}) | GENERIC_OAUTH2_KWARGS_KEYS
 
 # Pre-define optional kwargs keys as frozenset for O(1) lookups
 # These are extracted from kwargs only if present, avoiding unnecessary .get() calls
@@ -65,6 +77,7 @@ OPTIONAL_KWARGS_KEYS: Final = (
         }
     )
     | AWS_CREDENTIAL_KWARGS_KEYS
+    | GENERIC_OAUTH2_KWARGS_KEYS
 )
 
 # Backward-compatible alias for existing imports/tests.

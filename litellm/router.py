@@ -8552,7 +8552,7 @@ class Router:
                 raise ValueError(ptu_error)
             zeroed_pricing: Final = zeroed_ptu_pricing(_model_info, _litellm_params) if config_sourced else None
             litellm_params: Final[LiteLLM_Params] = LiteLLM_Params(
-                **(
+                **(  # pyright: ignore[reportArgumentType]  # merging in zeroed_pricing (Mapping[str, float]) collapses every LiteLLM_Params field's value type to one union; each field's actual runtime value stays correctly typed per key
                     _litellm_params
                     if zeroed_pricing is None
                     else MappingProxyType({**_litellm_params, **zeroed_pricing})
