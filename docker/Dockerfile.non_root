@@ -25,6 +25,10 @@ COPY ui/litellm-dashboard/package.json ui/litellm-dashboard/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline
 
 COPY ui/litellm-dashboard/ ./
+# autorouter_presets.test.ts reaches out of ui/litellm-dashboard via a relative
+# import to the real presets catalog; the build context above only contains
+# ui/litellm-dashboard, so mirror that one file at the path the import expects.
+COPY litellm/proxy/public_endpoints/autorouter_presets.json /litellm/proxy/public_endpoints/autorouter_presets.json
 RUN npm run build
 
 FROM $LITELLM_BUILD_IMAGE AS builder
