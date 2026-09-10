@@ -137,6 +137,28 @@ class TestGetGenericOAuth2BearerToken:
         assert get_generic_oauth2_bearer_token(config) == "at-1"
         assert route.call_count == 1
 
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"client_id": "other-client"},
+            {"client_secret": "other-secret"},
+            {"scope": "other-scope"},
+            {"auth_style": "body"},
+        ],
+    )
+    @respx.mock
+    def test_cache_isolated_by_authorization_context(self, overrides):
+        route = respx.post(TOKEN_URL).mock(
+            side_effect=[
+                httpx.Response(200, json={"access_token": "first-context"}),
+                httpx.Response(200, json={"access_token": "second-context"}),
+            ]
+        )
+        assert get_generic_oauth2_bearer_token(_config()) == "first-context"
+        assert get_generic_oauth2_bearer_token(_config(**overrides)) == "second-context"
+        assert get_generic_oauth2_bearer_token(_config()) == "first-context"
+        assert route.call_count == 2
+
     @respx.mock
     def test_refetches_after_ttl_expiry(self):
         route = respx.post(TOKEN_URL).mock(

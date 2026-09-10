@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -81,7 +83,18 @@ def get_generic_oauth2_bearer_token(config: GenericOAuth2Config) -> str:
 
 
 def _cache_key(config: GenericOAuth2Config) -> str:
-    return f"{config.token_endpoint}:{config.refresh_token}"
+    authorization_context: Final = json.dumps(
+        (
+            config.token_endpoint,
+            config.refresh_token,
+            config.client_id,
+            config.client_secret,
+            config.scope,
+            config.auth_style,
+        ),
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(authorization_context.encode()).hexdigest()
 
 
 def _basic_auth_header(client_id: str, client_secret: str) -> str:
