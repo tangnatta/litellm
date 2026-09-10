@@ -86,7 +86,8 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
     def page() -> HTMLResponse:
         return HTMLResponse(
             Path(__file__).with_name("login.html").read_text(),
-            headers=MappingProxyType({"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}),
+            # Preserve Origin on the local form POST while omitting cross-origin referrers.
+            headers=MappingProxyType({"Cache-Control": "no-store", "Referrer-Policy": "same-origin"}),
         )
 
     def status() -> JSONResponse:

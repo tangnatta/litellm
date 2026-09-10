@@ -239,7 +239,11 @@ def test_browser_login_pkce_state_and_replay(auth):
     with TestClient(
         app, base_url="http://localhost:4000", follow_redirects=False, client=("127.0.0.1", 50000)
     ) as client:
+        page = client.get("/antigravity")
+        assert page.headers["referrer-policy"] == "same-origin"
         assert client.post("/antigravity/login").status_code == 403
+        assert client.post("/antigravity/login", headers={"origin": "null"}).status_code == 403
+        assert client.post("/antigravity/login", headers={"origin": "https://example.com"}).status_code == 403
         login = client.post("/antigravity/login", headers={"origin": "http://localhost:4000"})
         params = parse_qs(urlparse(login.headers["location"]).query)
         assert params["code_challenge_method"] == ["S256"]
