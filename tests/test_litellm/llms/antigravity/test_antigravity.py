@@ -233,6 +233,16 @@ def test_upstream_failure_is_not_an_empty_success(auth):
 
 
 @respx.mock
+def test_http_error_surfaces_upstream_detail(auth):
+    respx.post(RUNTIME_URL + "/v1internal:streamGenerateContent?alt=sse").respond(
+        400, json={"error": {"message": "Model not found: chat_20706"}}
+    )
+    with pytest.raises(litellm.BadRequestError) as exc_info:
+        litellm.completion(model="antigravity/test-model", messages=[{"role": "user", "content": "Hi"}], num_retries=0)
+    assert "Model not found: chat_20706" in str(exc_info.value)
+
+
+@respx.mock
 def test_browser_login_pkce_state_and_replay(auth):
     app = FastAPI()
     app.include_router(create_login_router(auth, "http://localhost:4000"))

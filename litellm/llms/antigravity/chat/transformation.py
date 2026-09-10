@@ -301,6 +301,6 @@ class AntigravityConfig(BaseConfig):
     ) -> BaseLLMException:
         return AntigravityError(
             status_code=status_code,
-            message=f"Antigravity request failed (HTTP {status_code})",
+            message=f"Antigravity request failed (HTTP {status_code}): {error_message}",
             headers=httpx.Headers(headers),
         )
