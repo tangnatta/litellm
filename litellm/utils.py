@@ -8234,6 +8234,11 @@ class ProviderConfigManager:
         For Azure, *base_model* (when set) drives model-type detection so that
         non-standard deployment names still route to the correct config.
         """
+        if provider == LlmProviders.ANTIGRAVITY:
+            from litellm.llms.antigravity.chat.transformation import AntigravityConfig
+
+            return AntigravityConfig()
+
         # Handle OpenAI special cases (O-series and GPT-5 models)
         if provider == LlmProviders.OPENAI:
             from litellm.llms.openai.chat.gpt_transformation import (

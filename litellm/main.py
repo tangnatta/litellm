@@ -4867,6 +4867,28 @@ def _complete_custom_providers(
     return response  # pyright: ignore[reportReturnType]  # provider SDK return type is broader than the dispatch contract
 
 
+def _complete_antigravity(ctx: _CompletionDispatchContext) -> _CompletionDispatchResult:
+    return base_llm_http_handler.completion(
+        model=ctx.model,
+        stream=ctx.stream,
+        messages=ctx.messages,
+        acompletion=ctx.acompletion,
+        api_base=ctx.api_base,
+        model_response=ctx.model_response,
+        optional_params=ctx.optional_params,
+        litellm_params=ctx.litellm_params,
+        shared_session=ctx.shared_session,
+        custom_llm_provider="antigravity",
+        timeout=ctx.timeout,
+        headers=ctx.headers,
+        encoding=_get_encoding(),
+        api_key=ctx.api_key,
+        provider_config=ctx.provider_config,
+        logging_obj=ctx.logging,
+        client=_dispatch_client_http(ctx),
+    )
+
+
 def _complete_langgraph(ctx: _CompletionDispatchContext) -> _CompletionDispatchResult:
     acompletion: Final = ctx.acompletion
     api_base = ctx.api_base
@@ -5839,6 +5861,8 @@ def completion(
             # Get the Custom Handler
             response = _complete_custom_providers(_dispatch_ctx)
 
+        elif custom_llm_provider == "antigravity":
+            response = _complete_antigravity(_dispatch_ctx)
         elif custom_llm_provider == "langgraph":
             # LangGraph - Agent Runtime Provider
             response = _complete_langgraph(_dispatch_ctx)

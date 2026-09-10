@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiteLLM · Antigravity</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;background:#f4f6fa;color:#172238;margin:0}main{max-width:720px;margin:64px auto;padding:32px;background:white;border:1px solid #dde3ec;border-radius:18px}h1{font-size:32px;letter-spacing:-1px;margin:8px 0}h2{font-size:19px;margin-top:28px}.label{font-size:13px;color:#586681;text-transform:uppercase;letter-spacing:2px}button{background:#284fd6;color:white;border:0;border-radius:8px;padding:12px 20px;font:inherit;cursor:pointer}button:disabled{opacity:.5}input,select,textarea{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd4e2;border-radius:8px;font:inherit;margin:6px 0 14px}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;background:#f4f6fa;border-radius:8px}#status{color:#526077}.muted{font-size:14px;color:#586681}label{display:block}#notice{color:#a44215}@media(max-width:780px){main{margin:16px;padding:24px}}
+</style></head><body><main>
+<div class="label">LiteLLM provider pilot</div><h1>Connect Antigravity</h1>
+<p>Sign in with your Google account to use Antigravity directly through LiteLLM.</p>
+<p id="status">Checking connection…</p><p id="notice" role="alert"></p>
+<form action="/antigravity/login" method="post"><button>Sign in with Google</button></form>
+<p class="muted">Credentials stay on this computer. Google will ask you to approve access.</p>
+<section id="connected" hidden><h2>Google Cloud project</h2>
+<p class="muted">We try to discover your project automatically. If none is found, enter your existing project ID.</p>
+<label for="project">Project ID</label><input id="project" placeholder="Your Google Cloud project ID">
+<button id="discover">Discover or save project</button>
+<h2>Try a message</h2><label for="model">Model</label><input id="model" list="model-list" placeholder="Choose a discovered model"><datalist id="model-list"></datalist>
+<button id="models">Refresh available models</button>
+<label for="prompt">Message</label><textarea id="prompt" rows="3">Reply with a short hello.</textarea>
+<button id="send">Send message</button><pre id="output" aria-live="polite">Your response will appear here.</pre>
+</section></main>
+<script>
+const $=id=>document.getElementById(id);
+async function request(path,options={}){const r=await fetch(path,options);const data=await r.json();if(!r.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.error||data));return data}
+async function models(){const data=await request('/antigravity/models');$('model-list').replaceChildren(...data.models.map(name=>{const option=document.createElement('option');option.value=name;return option}));if(!$('model').value&&data.models.length)$('model').value=data.models[0];if(!data.models.length)$('notice').textContent='No models were returned. Check your project and account access.'}
+async function status(){const data=await request('/antigravity/status');$('status').textContent=data.signed_in?(data.project_id?'Connected. Project: '+data.project_id:'Signed in. A Google Cloud project is still needed.'):'Not signed in yet';$('connected').hidden=!data.signed_in;$('project').value=data.project_id;if(data.project_id)await models()}
+async function action(button,fn){button.disabled=true;$('notice').textContent='';try{await fn()}catch(e){$('notice').textContent=e.message}finally{button.disabled=false}}
+$('discover').onclick=()=>action($('discover'),async()=>{await request('/antigravity/project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:$('project').value.trim()})});await status()});
+$('models').onclick=()=>action($('models'),models);
+$('send').onclick=()=>action($('send'),async()=>{if(!$('model').value.trim())throw Error('Choose a model first');$('output').textContent='Waiting for Antigravity…';const data=await request('/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'antigravity/'+$('model').value.trim().replace(/^antigravity\//,''),messages:[{role:'user',content:$('prompt').value}]})});$('output').textContent=data.choices?.[0]?.message?.content||JSON.stringify(data,null,2)});
+const outcome=new URLSearchParams(location.search).get('login');if(outcome==='cancelled')$('notice').textContent='Sign-in was cancelled. You can try again.';if(outcome==='needs_attention')$('notice').textContent='Login or project discovery needs attention. Check the connection below and retry.';history.replaceState(null,'','/antigravity');status().catch(e=>$('notice').textContent=e.message);
+</script></body></html>
