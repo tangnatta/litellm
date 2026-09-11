@@ -31,15 +31,9 @@ from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import LlmProviders, ModelResponse
 
 from ..authenticator import RUNTIME_URL, AntigravityError, Authenticator, content_headers, get_authenticator
+from ..models import output_token_cap, resolve_model_id
 
 _OBJECT: Final = TypeAdapter(dict[str, JsonValue])
-_MODEL_ALIASES: Final = MappingProxyType(
-    {
-        "gemini-3.1-pro-high": "gemini-pro-agent",
-        "gemini-3-pro-image-preview": "gemini-3-pro-image",
-        "gpt-oss-120b": "gpt-oss-120b-medium",
-    }
-)
 
 
 class CodeAssistRequest(TypedDict):
@@ -49,6 +43,158 @@ class CodeAssistRequest(TypedDict):
     request: ReadOnly[JsonValue]
     userAgent: ReadOnly[str]
     requestType: ReadOnly[str]
+
+
+def _part_is_valid(part: JsonValue) -> bool:
+    if not isinstance(part, dict):
+        return False
+    if part.get("text") == "":
+        return False
+    function_call: Final = part.get("functionCall", part.get("function_call"))
+    return not (isinstance(function_call, dict) and not function_call.get("name"))
+
+
+def _normalize_contents(contents: JsonValue, model: str) -> tuple[Mapping[str, JsonValue], ...]:
+    if not isinstance(contents, list):
+        return ()
+    normalized: Final[list[Mapping[str, JsonValue]]] = []  # mutable-ok: ordered turn merge accumulator
+    for content in contents:
+        if not isinstance(content, dict):
+            continue
+        parts_value = content.get("parts")  # rebind-ok: loop-local value
+        if not isinstance(parts_value, list):
+            continue
+        parts: tuple[JsonValue, ...] = tuple(  # rebind-ok: loop-local value
+            part for part in parts_value if _part_is_valid(part)
+        )
+        if not parts:
+            continue
+        has_function_response = any(  # rebind-ok: loop-local classification
+            isinstance(part, dict) and ("functionResponse" in part or "function_response" in part) for part in parts
+        )
+        role = "user" if has_function_response else str(content.get("role", "user"))  # rebind-ok: loop-local role
+        entry: Mapping[str, JsonValue] = _OBJECT.validate_python(  # rebind-ok: loop-local normalized content
+            {  # mutable-ok: validated immediately as provider JSON
+                **content,
+                "role": role,
+                "parts": list(parts),  # mutable-ok: JSON arrays require a list at the provider boundary
+            }  # mutable-ok: validated immediately as provider JSON
+        )
+        if normalized and normalized[-1].get("role") == role:
+            previous: Mapping[str, JsonValue] = normalized[-1]  # rebind-ok: loop-local preceding content
+            previous_parts: JsonValue = previous.get("parts")  # rebind-ok: loop-local preceding parts
+            combined: tuple[JsonValue, ...] = (  # rebind-ok: loop-local merged parts
+                (*previous_parts, *parts) if isinstance(previous_parts, list) else parts
+            )
+            merged: Mapping[str, JsonValue] = _OBJECT.validate_python(  # rebind-ok: loop-local merged content
+                {  # mutable-ok: validated immediately as provider JSON
+                    **previous,
+                    "parts": list(combined),  # mutable-ok: JSON arrays require a list at the provider boundary
+                }  # mutable-ok: validated immediately as provider JSON
+            )
+            normalized[-1] = merged
+        else:
+            normalized.append(entry)
+    lower_model: Final = model.lower()
+    strips_assistant: Final = "claude" in lower_model or (
+        (lower_model.startswith("gemini-3") or lower_model == "gemini-pro-agent") and "image" not in lower_model
+    )
+    while strips_assistant and len(normalized) > 1 and normalized[-1].get("role") == "model":
+        normalized.pop()
+    return tuple(normalized)
+
+
+def _normalize_generation_config(
+    value: JsonValue, model: str
+) -> dict[str, JsonValue]:  # mutable-ok: JSON dictionary is required by the provider transport
+    source: Final[Mapping[str, JsonValue]] = (
+        value
+        if isinstance(value, dict)
+        else MappingProxyType[str, JsonValue]({})  # mutable-ok: empty literal is frozen before use
+    )
+    thinking: Final = source.get("thinkingConfig", source.get("thinking_config"))
+    allows_thinking: Final = "claude" not in model.lower() and not model.startswith("gpt-oss")
+    canonical: Final = MappingProxyType(
+        {
+            key: item
+            for key, item in source.items()
+            if key not in ("top_k", "top_p", "max_output_tokens", "thinking_config")
+        }
+    )
+    without_thinking: Final = (
+        MappingProxyType({key: item for key, item in canonical.items() if key != "thinkingConfig"})
+        if not allows_thinking
+        else canonical
+    )
+    cap: Final = output_token_cap(model)
+    requested_max: Final = source.get("maxOutputTokens", source.get("max_output_tokens"))
+    thinking_budget: Final = thinking.get("thinkingBudget") if isinstance(thinking, dict) else None
+    minimum_for_thinking: Final = thinking_budget + 1 if isinstance(thinking_budget, int) and thinking_budget > 0 else 0
+    bounded_max: Final = (
+        min(max(requested_max if isinstance(requested_max, int) else 0, minimum_for_thinking), cap)
+        if isinstance(requested_max, int) or minimum_for_thinking > 0
+        else None
+    )
+    return _OBJECT.validate_python(
+        {  # mutable-ok: validated immediately as provider JSON
+            **without_thinking,
+            "topK": source.get("topK", source.get("top_k", 40)),
+            "topP": source.get("topP", source.get("top_p", 1.0)),
+            **(
+                {"thinkingConfig": thinking}  # mutable-ok: conditional provider JSON field
+                if allows_thinking and isinstance(thinking, dict)
+                else {}  # mutable-ok: conditional provider JSON field
+            ),
+            **(
+                {"maxOutputTokens": bounded_max}  # mutable-ok: conditional provider JSON field
+                if bounded_max is not None
+                else {}  # mutable-ok: conditional provider JSON field
+            ),
+        }
+    )
+
+
+def _normalize_request(
+    request: Mapping[str, JsonValue], model: str
+) -> dict[str, JsonValue]:  # mutable-ok: JSON dictionary is required by the provider transport
+    contents: Final = _normalize_contents(request.get("contents"), model)
+    safety: Final = request.get("safetySettings")
+    safe_settings: Final = (
+        tuple(
+            setting
+            for setting in safety
+            if not (isinstance(setting, dict) and setting.get("category") == "HARM_CATEGORY_CIVIC_INTEGRITY")
+        )
+        if isinstance(safety, list)
+        else None
+    )
+    tools: Final = request.get("tools")
+    tool_config: Final = (
+        {"functionCallingConfig": {"mode": "VALIDATED"}}  # mutable-ok: validated in final provider JSON
+        if isinstance(tools, list) and tools
+        else request.get("toolConfig")
+    )
+    return _OBJECT.validate_python(
+        {  # mutable-ok: validated immediately as provider JSON
+            **request,
+            **(
+                {"contents": list(contents)}  # mutable-ok: JSON arrays require a list at the provider boundary
+                if contents
+                else {}  # mutable-ok: conditional provider JSON field
+            ),
+            "generationConfig": _normalize_generation_config(request.get("generationConfig"), model),
+            **(
+                {"safetySettings": list(safe_settings)}  # mutable-ok: JSON array at provider boundary
+                if safe_settings is not None
+                else {}  # mutable-ok: conditional provider JSON field
+            ),
+            **(
+                {"toolConfig": tool_config}  # mutable-ok: conditional provider JSON field
+                if tool_config is not None
+                else {}  # mutable-ok: conditional provider JSON field
+            ),
+        }
+    )
 
 
 def unwrap_event(event: str) -> str:
@@ -183,7 +329,7 @@ class AntigravityConfig(BaseConfig):
         headers: Mapping[str, str],
     ) -> dict[str, JsonValue]:  # mutable-ok: BaseConfig requires a JSON dictionary return value
         credentials: Final = self.authenticator.credentials()
-        upstream_model: Final = _MODEL_ALIASES.get(model, model)
+        upstream_model: Final = resolve_model_id(model)
         request: Final = _OBJECT.validate_python(
             _transform_request_body(
                 messages=deepcopy(
@@ -198,9 +344,10 @@ class AntigravityConfig(BaseConfig):
                 cached_content=None,
             )
         )
-        normalized: Final = MappingProxyType(
+        normalized_keys: Final = MappingProxyType(
             {("systemInstruction" if key == "system_instruction" else key): value for key, value in request.items()}
         )
+        normalized: Final = _normalize_request(normalized_keys, upstream_model)
         request_with_session: Final = MappingProxyType(
             {**normalized, "sessionId": f"-{secrets.randbelow(9_000_000_000_000_000_000)}"}
         ).copy()

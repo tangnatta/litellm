@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 import litellm
 from litellm.llms.antigravity.authenticator import (
     BOOTSTRAP_URL,
+    DISCOVERY_URLS,
     RUNTIME_URL,
     TOKEN_URL,
     AntigravityError,
@@ -20,6 +21,7 @@ from litellm.llms.antigravity.authenticator import (
     Credentials,
     get_authenticator,
 )
+from litellm.llms.antigravity.models import PUBLIC_MODELS
 from litellm.llms.antigravity.chat.transformation import unwrap_lines
 from litellm.llms.antigravity.login import create_login_router
 
@@ -87,18 +89,37 @@ def test_completion_calls_code_assist_directly(auth, stream):
 
 @respx.mock
 def test_model_discovery_filters_internal_and_non_chat_models(auth):
-    respx.post(BOOTSTRAP_URL + "/v1internal:fetchAvailableModels").respond(
+    route = respx.post(DISCOVERY_URLS[0]).respond(
         200,
         json={
             "models": {
                 "chat_20706": {"isInternal": True},
                 "gemini-3.1-flash-image": {},
                 "tab_flash_lite_preview": {},
+                "gemini-2.5-pro": {},
                 "gemini-pro-agent": {"displayName": "Gemini Pro"},
             }
         },
     )
     assert auth.models() == ("gemini-pro-agent",)
+    assert json.loads(route.calls.last.request.content) == {}
+
+
+@respx.mock
+def test_model_discovery_falls_back_across_endpoints_and_shapes(auth):
+    respx.post(DISCOVERY_URLS[0]).respond(503)
+    respx.post(DISCOVERY_URLS[1]).respond(
+        200,
+        json={"models": [{"id": "chat_20706", "isInternal": True}, {"name": "gemini-3.8-flash-tiered"}]},
+    )
+    assert auth.models() == ("gemini-3.8-flash-tiered",)
+
+
+@respx.mock
+def test_model_discovery_uses_curated_fallback(auth):
+    for url in DISCOVERY_URLS:
+        respx.post(url).respond(503)
+    assert auth.models() == PUBLIC_MODELS
 
 
 @respx.mock
@@ -106,6 +127,39 @@ def test_model_alias_uses_callable_upstream_id(auth):
     route = respx.post(RUNTIME_URL + "/v1internal:streamGenerateContent?alt=sse").respond(200, text=sse())
     litellm.completion(model="antigravity/gemini-3.1-pro-high", messages=[{"role": "user", "content": "Hi"}])
     assert json.loads(route.calls.last.request.content)["model"] == "gemini-pro-agent"
+
+
+@respx.mock
+def test_request_normalization_matches_antigravity_contract(auth):
+    route = respx.post(RUNTIME_URL + "/v1internal:streamGenerateContent?alt=sse").respond(200, text=sse())
+    litellm.completion(
+        model="antigravity/gemini-pro-agent",
+        messages=[
+            {"role": "user", "content": "First"},
+            {"role": "user", "content": "Second"},
+            {"role": "assistant", "content": "Prefill"},
+        ],
+        max_tokens=100000,
+    )
+    request = json.loads(route.calls.last.request.content)["request"]
+    assert len(request["contents"]) == 1
+    assert [part["text"] for part in request["contents"][0]["parts"]] == ["First", "Second"]
+    assert request["generationConfig"]["topK"] == 40
+    assert request["generationConfig"]["topP"] == 1.0
+    assert request["generationConfig"]["maxOutputTokens"] == 65535
+
+
+@respx.mock
+def test_claude_output_is_capped_for_antigravity(auth):
+    route = respx.post(RUNTIME_URL + "/v1internal:streamGenerateContent?alt=sse").respond(200, text=sse())
+    litellm.completion(
+        model="antigravity/claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "Hi"}],
+        max_tokens=100000,
+    )
+    generation = json.loads(route.calls.last.request.content)["request"]["generationConfig"]
+    assert generation["maxOutputTokens"] == 16384
+    assert "thinkingConfig" not in generation
 
 
 @pytest.mark.asyncio

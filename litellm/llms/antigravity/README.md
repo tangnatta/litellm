@@ -4,6 +4,8 @@ This provider connects LiteLLM directly to Google Code Assist using an Antigravi
 
 The pilot includes browser login with OAuth state and PKCE, local credential storage, refresh-token rotation, project discovery/onboarding, model discovery, and synchronous/asynchronous chat with streaming and tool calls
 
+Model discovery follows the Antigravity hosts and both catalog methods used by OmniRoute. It filters internal, retired, and non-chat entries, and uses a curated callable catalog when live discovery is unavailable. The request adapter also applies Antigravity model aliases, native request/session identity, generation limits, conversation cleanup, tool validation, and model-specific thinking rules
+
 ## Run locally
 
 From the repository root, install LiteLLM and its proxy dependencies:
@@ -67,6 +69,6 @@ Use `litellm.acompletion` for asynchronous calls and `stream=True` for streaming
 
 The bundled launcher binds to loopback, runs one worker, and exposes a local login page alongside the proxy. It is intended for one account on one computer. Credential refresh is coordinated within that process; shared credential files across multiple workers are not supported yet
 
-Runtime requests use the daily Cloud Code endpoint by default. A deployment can set `api_base: https://cloudcode-pa.googleapis.com` to use the standard endpoint. Automatic endpoint failover, distributed account storage, remote login, multiple-account selection, and the remaining OmniRoute providers are follow-up work
+Runtime requests use the daily Cloud Code endpoint by default. A deployment can set `api_base: https://cloudcode-pa.googleapis.com` to use the standard endpoint. Runtime request failover, OmniRoute's database-backed multi-account routing and credit accounting, distributed account storage, remote login, and the remaining OmniRoute providers are follow-up work
 
 OAuth client values must be supplied through the environment. The provider does not read another application's account files or embed client credentials. Live Google consent, account eligibility, and generation must be verified using the signed-in account; mocked tests do not establish live-provider compatibility

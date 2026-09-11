@@ -13,7 +13,8 @@ body{font:16px/1.6 system-ui,sans-serif;background:#f4f6fa;color:#172238;margin:
 <p class="muted">We try to discover your project automatically. If none is found, enter your existing project ID.</p>
 <label for="project">Project ID</label><input id="project" placeholder="Your Google Cloud project ID">
 <button id="discover">Discover or save project</button>
-<h2>Try a message</h2><label for="model">Model</label><input id="model" list="model-list" placeholder="Choose a discovered model"><datalist id="model-list"></datalist>
+<h2>Try a message</h2><label for="model">Model</label><select id="model"><option value="">Loading models…</option></select>
+<p class="muted" id="model-count"></p>
 <button id="models">Refresh available models</button>
 <label for="prompt">Message</label><textarea id="prompt" rows="3">Reply with a short hello.</textarea>
 <button id="send">Send message</button><pre id="output" aria-live="polite">Your response will appear here.</pre>
@@ -21,7 +22,7 @@ body{font:16px/1.6 system-ui,sans-serif;background:#f4f6fa;color:#172238;margin:
 <script>
 const $=id=>document.getElementById(id);
 async function request(path,options={}){const r=await fetch(path,options);const data=await r.json();if(!r.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.error||data));return data}
-async function models(){const data=await request('/antigravity/models');$('model-list').replaceChildren(...data.models.map(name=>{const option=document.createElement('option');option.value=name;return option}));if(!$('model').value&&data.models.length)$('model').value=data.models[0];if(!data.models.length)$('notice').textContent='No models were returned. Check your project and account access.'}
+async function models(){const previous=$('model').value;const data=await request('/antigravity/models');$('model').replaceChildren(...data.models.map(name=>{const option=document.createElement('option');option.value=name;option.textContent=name;return option}));if(previous&&data.models.includes(previous))$('model').value=previous;$('model-count').textContent=data.models.length+' callable models available';if(!data.models.length)$('notice').textContent='No models were returned. Check your project and account access.'}
 async function status(){const data=await request('/antigravity/status');$('status').textContent=data.signed_in?(data.project_id?'Connected. Project: '+data.project_id:'Signed in. A Google Cloud project is still needed.'):'Not signed in yet';$('connected').hidden=!data.signed_in;$('project').value=data.project_id;if(data.project_id)await models()}
 async function action(button,fn){button.disabled=true;$('notice').textContent='';try{await fn()}catch(e){$('notice').textContent=e.message}finally{button.disabled=false}}
 $('discover').onclick=()=>action($('discover'),async()=>{await request('/antigravity/project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:$('project').value.trim()})});await status()});

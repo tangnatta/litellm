@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import platform
-import re
 import tempfile
 import threading
 import time
@@ -18,29 +17,27 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 
+from .models import PUBLIC_MODELS, is_discoverable_model
+
 AUTHORIZE_URL: Final = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL: Final = "https://oauth2.googleapis.com/token"
 BOOTSTRAP_URL: Final = "https://cloudcode-pa.googleapis.com"
 RUNTIME_URL: Final = "https://daily-cloudcode-pa.googleapis.com"
+DISCOVERY_URLS: Final = tuple(
+    f"{base}/v1internal:{method}"
+    for method in ("fetchAvailableModels", "models")
+    for base in (
+        RUNTIME_URL,
+        BOOTSTRAP_URL,
+        "https://daily-cloudcode-pa.sandbox.googleapis.com",
+    )
+)
 SCOPES: Final = tuple(
     f"https://www.googleapis.com/auth/{scope}"
     for scope in ("cloud-platform", "userinfo.email", "userinfo.profile", "cclog", "experimentsandconfigs")
 )
 _JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 _AUTH_LOCK: Final = threading.RLock()
-_NON_CHAT_MODEL_IDS: Final = frozenset(
-    {
-        "gemini-3-pro-image-preview",
-        "gemini-3.1-flash-image",
-        "gemini-3.1-flash-tts-preview",
-        "gemini-2.5-flash-preview-tts",
-        "tab_flash_lite_preview",
-        "tab_jump_flash_lite_preview",
-    }
-)
-_NON_CHAT_MODEL_PATTERN: Final = re.compile(
-    r"(?:^|[-_])(image|imagen|audio|tts|embedding|embed|video|veo)(?:[-_]|$)", re.I
-)
 
 
 class AntigravityError(BaseLLMException):
@@ -103,6 +100,28 @@ def _project(data: Mapping[str, JsonValue]) -> str:
     value: Final = data.get("cloudaicompanionProject")
     identifier: Final = value.get("id") if isinstance(value, dict) else value
     return identifier.strip() if isinstance(identifier, str) else ""
+
+
+def _discovered_models(data: Mapping[str, JsonValue]) -> tuple[str, ...]:
+    models: Final = data.get("models")
+    if isinstance(models, dict):
+        return tuple(
+            sorted(model_id for model_id, information in models.items() if is_discoverable_model(model_id, information))
+        )
+    if not isinstance(models, list):
+        return ()
+    identifiers: Final = tuple(
+        information.get("id", information.get("name", information.get("model")))
+        for information in models
+        if isinstance(information, dict)
+    )
+    return tuple(
+        sorted(
+            model_id
+            for model_id, information in zip(identifiers, (item for item in models if isinstance(item, dict)))
+            if isinstance(model_id, str) and is_discoverable_model(model_id, information)
+        )
+    )
 
 
 class Authenticator:
@@ -328,30 +347,25 @@ class Authenticator:
 
     def models(self, account: str = "default") -> tuple[str, ...]:
         credentials: Final = self.credentials(account)
-        try:
-            data: Final = self._json(
-                self.client.post(
-                    f"{BOOTSTRAP_URL}/v1internal:fetchAvailableModels",
-                    headers=content_headers(credentials.access_token),
-                    json=MappingProxyType({"project": credentials.project_id}).copy(),
-                ),
-                "model discovery",
-            )
-        except httpx.HTTPError:
-            raise AntigravityError(status_code=502, message="Could not reach Antigravity model discovery") from None
-        models: Final = data.get("models")
-        if not isinstance(models, dict):
-            return ()
-        return tuple(
-            sorted(
-                model_id
-                for model_id, information in models.items()
-                if model_id
-                and not (isinstance(information, dict) and information.get("isInternal") is True)
-                and model_id not in _NON_CHAT_MODEL_IDS
-                and _NON_CHAT_MODEL_PATTERN.search(model_id) is None
-            )
-        )
+        headers: Final = content_headers(credentials.access_token)
+        for url in DISCOVERY_URLS:
+            try:
+                response = self.client.post(  # rebind-ok: each endpoint produces a new response
+                    url,
+                    headers=headers,
+                    json=_JSON_OBJECT.validate_python(MappingProxyType({})),
+                )
+                if response.is_error:
+                    continue
+                data = _JSON_OBJECT.validate_python(  # rebind-ok: each endpoint has an independent catalog
+                    response.json()
+                )
+                discovered = _discovered_models(data)  # rebind-ok: each endpoint has an independent catalog
+                if discovered:
+                    return discovered
+            except (httpx.HTTPError, ValueError):
+                continue
+        return PUBLIC_MODELS
 
 
 @lru_cache(maxsize=1)
