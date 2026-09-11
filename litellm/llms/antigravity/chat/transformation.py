@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import secrets
+import time
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from copy import deepcopy
 from types import MappingProxyType
 from typing import Final
-from uuid import uuid4
 
 import httpx
 from pydantic import JsonValue, TypeAdapter
@@ -32,6 +33,13 @@ from litellm.types.utils import LlmProviders, ModelResponse
 from ..authenticator import RUNTIME_URL, AntigravityError, Authenticator, content_headers, get_authenticator
 
 _OBJECT: Final = TypeAdapter(dict[str, JsonValue])
+_MODEL_ALIASES: Final = MappingProxyType(
+    {
+        "gemini-3.1-pro-high": "gemini-pro-agent",
+        "gemini-3-pro-image-preview": "gemini-3-pro-image",
+        "gpt-oss-120b": "gpt-oss-120b-medium",
+    }
+)
 
 
 class CodeAssistRequest(TypedDict):
@@ -175,12 +183,13 @@ class AntigravityConfig(BaseConfig):
         headers: Mapping[str, str],
     ) -> dict[str, JsonValue]:  # mutable-ok: BaseConfig requires a JSON dictionary return value
         credentials: Final = self.authenticator.credentials()
+        upstream_model: Final = _MODEL_ALIASES.get(model, model)
         request: Final = _OBJECT.validate_python(
             _transform_request_body(
                 messages=deepcopy(
                     list(messages)  # mutable-ok: Gemini conversion requires a private mutable list
                 ),
-                model=model,
+                model=upstream_model,
                 optional_params=MappingProxyType(
                     {key: value for key, value in optional_params.items() if key != "stream"}
                 ).copy(),
@@ -191,12 +200,15 @@ class AntigravityConfig(BaseConfig):
         )
         normalized: Final = MappingProxyType(
             {("systemInstruction" if key == "system_instruction" else key): value for key, value in request.items()}
+        )
+        request_with_session: Final = MappingProxyType(
+            {**normalized, "sessionId": f"-{secrets.randbelow(9_000_000_000_000_000_000)}"}
         ).copy()
         envelope: Final[CodeAssistRequest] = {
             "project": credentials.project_id,
-            "model": model,
-            "requestId": f"agent-{uuid4()}",
-            "request": normalized,
+            "model": upstream_model,
+            "requestId": f"agent/{time.time_ns() // 1_000_000}/{secrets.token_hex(4)}",
+            "request": request_with_session,
             "userAgent": "antigravity",
             "requestType": "agent",
         }

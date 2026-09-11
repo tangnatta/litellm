@@ -78,9 +78,34 @@ def test_completion_calls_code_assist_directly(auth, stream):
     assert body["project"] == "test-project"
     assert body["model"] == "test-model"
     assert body["request"]["contents"][0]["parts"][0]["text"] == "Hi"
+    assert body["request"]["sessionId"].startswith("-")
+    assert body["requestId"].startswith("agent/")
     assert "stream" not in body and "stream" not in body["request"]
     assert route.calls.last.request.headers["authorization"] == "Bearer test-access"
     assert "test-refresh" not in route.calls.last.request.content.decode()
+
+
+@respx.mock
+def test_model_discovery_filters_internal_and_non_chat_models(auth):
+    respx.post(BOOTSTRAP_URL + "/v1internal:fetchAvailableModels").respond(
+        200,
+        json={
+            "models": {
+                "chat_20706": {"isInternal": True},
+                "gemini-3.1-flash-image": {},
+                "tab_flash_lite_preview": {},
+                "gemini-pro-agent": {"displayName": "Gemini Pro"},
+            }
+        },
+    )
+    assert auth.models() == ("gemini-pro-agent",)
+
+
+@respx.mock
+def test_model_alias_uses_callable_upstream_id(auth):
+    route = respx.post(RUNTIME_URL + "/v1internal:streamGenerateContent?alt=sse").respond(200, text=sse())
+    litellm.completion(model="antigravity/gemini-3.1-pro-high", messages=[{"role": "user", "content": "Hi"}])
+    assert json.loads(route.calls.last.request.content)["model"] == "gemini-pro-agent"
 
 
 @pytest.mark.asyncio

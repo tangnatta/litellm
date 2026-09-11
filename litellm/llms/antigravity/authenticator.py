@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import tempfile
 import threading
 import time
@@ -27,6 +28,19 @@ SCOPES: Final = tuple(
 )
 _JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 _AUTH_LOCK: Final = threading.RLock()
+_NON_CHAT_MODEL_IDS: Final = frozenset(
+    {
+        "gemini-3-pro-image-preview",
+        "gemini-3.1-flash-image",
+        "gemini-3.1-flash-tts-preview",
+        "gemini-2.5-flash-preview-tts",
+        "tab_flash_lite_preview",
+        "tab_jump_flash_lite_preview",
+    }
+)
+_NON_CHAT_MODEL_PATTERN: Final = re.compile(
+    r"(?:^|[-_])(image|imagen|audio|tts|embedding|embed|video|veo)(?:[-_]|$)", re.I
+)
 
 
 class AntigravityError(BaseLLMException):
@@ -326,7 +340,18 @@ class Authenticator:
         except httpx.HTTPError:
             raise AntigravityError(status_code=502, message="Could not reach Antigravity model discovery") from None
         models: Final = data.get("models")
-        return tuple(sorted(models)) if isinstance(models, dict) else ()
+        if not isinstance(models, dict):
+            return ()
+        return tuple(
+            sorted(
+                model_id
+                for model_id, information in models.items()
+                if model_id
+                and not (isinstance(information, dict) and information.get("isInternal") is True)
+                and model_id not in _NON_CHAT_MODEL_IDS
+                and _NON_CHAT_MODEL_PATTERN.search(model_id) is None
+            )
+        )
 
 
 @lru_cache(maxsize=1)
