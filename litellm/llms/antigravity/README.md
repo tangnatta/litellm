@@ -6,11 +6,35 @@ The pilot includes browser login with OAuth state and PKCE, local credential sto
 
 ## Run locally
 
-Install LiteLLM's proxy dependencies, configure `ANTIGRAVITY_OAUTH_CLIENT_ID` and `ANTIGRAVITY_OAUTH_CLIENT_SECRET` for the public desktop OAuth client, then run:
+From the repository root, install LiteLLM and its proxy dependencies:
 
 ```sh
-python -m litellm.llms.antigravity --port 4000
+uv sync --extra proxy
 ```
+
+Configure the public desktop OAuth client used for Antigravity. These are application credentials, not the user's Google account credentials:
+
+```sh
+export ANTIGRAVITY_OAUTH_CLIENT_ID='<desktop-oauth-client-id>'
+export ANTIGRAVITY_OAUTH_CLIENT_SECRET='<desktop-oauth-client-secret>'
+```
+
+Build validation and tests can be run before starting the service:
+
+```sh
+uv run ruff check litellm/llms/antigravity
+LITELLM_LOCAL_MODEL_COST_MAP=True uv run pytest \
+  tests/test_litellm/llms/antigravity/test_antigravity.py -q
+```
+
+Start the local LiteLLM proxy and login page:
+
+```sh
+LITELLM_LOCAL_MODEL_COST_MAP=True \
+  uv run python -m litellm.llms.antigravity --port 4000
+```
+
+To store account tokens somewhere other than the default directory, set `ANTIGRAVITY_AUTH_DIR` before starting the service.
 
 Open [the login page](http://localhost:4000/antigravity) in your regular browser and choose **Sign in with Google**. After consent, the page discovers your project and available models. If Google requires an existing Cloud project, enter its project ID and choose **Discover or save project**. Select a model and send a message from the same page
 
