@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
 import { useUISettings } from "@/app/(dashboard)/hooks/uiSettings/useUISettings";
@@ -24,6 +25,7 @@ import ModelRetrySettingsPanel from "@/app/(dashboard)/models-and-endpoints/pane
 import ModelGroupAliasPanel from "@/app/(dashboard)/models-and-endpoints/panels/ModelGroupAliasPanel";
 import AccessGroupBudgetsPanel from "@/app/(dashboard)/models-and-endpoints/panels/AccessGroupBudgetsPanel";
 import PriceDataPanel from "@/app/(dashboard)/models-and-endpoints/panels/PriceDataPanel";
+import AntigravityPanel from "@/app/(dashboard)/models-and-endpoints/panels/AntigravityPanel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -36,7 +38,8 @@ type ModelTabSlug =
   | "retry-settings"
   | "model-group-alias"
   | "access-group-budgets"
-  | "price-data";
+  | "price-data"
+  | "antigravity";
 
 const BASE_TAB_KEY = "all-models";
 
@@ -50,6 +53,7 @@ const TAB_LABELS: Record<ModelTabSlug, string> = {
   "model-group-alias": "Model Group Alias",
   "access-group-budgets": "Model Access Group Budgets",
   "price-data": "Price Data Reload",
+  antigravity: "Antigravity",
 };
 
 const renderPanel = (key: string) => {
@@ -74,12 +78,15 @@ const renderPanel = (key: string) => {
       return <AccessGroupBudgetsPanel />;
     case "price-data":
       return <PriceDataPanel />;
+    case "antigravity":
+      return <AntigravityPanel />;
     default:
       return null;
   }
 };
 
 export default function ModelsAndEndpointsPage() {
+  const searchParams = useSearchParams();
   const { accessToken, userRole, userId: userID, premiumUser, isViewOnly } = useAuthorized();
   const { data: teams } = useTeams();
   const { data: uiSettings } = useUISettings();
@@ -87,7 +94,7 @@ export default function ModelsAndEndpointsPage() {
   const { modelId, teamId, close } = useModelDetailRouting();
   const { availableModelAccessGroups, allModelsOnProxy } = useModelDashboardData();
 
-  const [activeKey, setActiveKey] = useState<string>(BASE_TAB_KEY);
+  const [activeKey, setActiveKey] = useState<string>(searchParams?.has("antigravity") ? "antigravity" : BASE_TAB_KEY);
   const [lastRefreshed, setLastRefreshed] = useState("");
 
   const isInternalUser = userRole && internalUserRoles.includes(userRole);
@@ -115,6 +122,7 @@ export default function ModelsAndEndpointsPage() {
             "model-group-alias",
             "access-group-budgets",
             "price-data",
+            "antigravity",
           ] as const)
         : []),
     ],

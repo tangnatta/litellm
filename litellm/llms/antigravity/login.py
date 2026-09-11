@@ -25,6 +25,7 @@ class LoginAttempt:
     state: str
     verifier: str
     created_at: float
+    return_to: str
 
 
 class LoginSessions:
@@ -32,9 +33,12 @@ class LoginSessions:
         self.attempts: MappingProxyType[str, LoginAttempt] = MappingProxyType({})
         self.lock = threading.Lock()
 
-    def create(self) -> LoginAttempt:
+    def create(self, return_to: str = "") -> LoginAttempt:
         with self.lock:
-            attempt: Final = LoginAttempt(secrets.token_urlsafe(32), secrets.token_urlsafe(64), time.monotonic())
+            safe_return: Final = return_to if return_to.startswith("/ui") and not return_to.startswith("//") else ""
+            attempt: Final = LoginAttempt(
+                secrets.token_urlsafe(32), secrets.token_urlsafe(64), time.monotonic(), safe_return
+            )
             recent: Final = tuple(a for a in self.attempts.values() if time.monotonic() - a.created_at < 600)[-31:]
             self.attempts = MappingProxyType({a.state: a for a in (*recent, attempt)})
             return attempt
@@ -102,8 +106,8 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
             headers=MappingProxyType({"Cache-Control": "no-store"}),
         )
 
-    def login() -> RedirectResponse:
-        attempt: Final = sessions.create()
+    def login(return_to: str = "") -> RedirectResponse:
+        attempt: Final = sessions.create(return_to)
         challenge: Final = (
             base64.urlsafe_b64encode(hashlib.sha256(attempt.verifier.encode()).digest()).rstrip(b"=").decode()
         )
@@ -129,7 +133,8 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
         if error or not code:
             return RedirectResponse(origin + "/antigravity?login=cancelled", status_code=303)
         outcome: Final = finish_login(code, attempt.verifier)
-        response: Final = RedirectResponse(origin + "/antigravity?login=" + outcome, status_code=303)
+        destination: Final = attempt.return_to or "/antigravity?login=" + outcome
+        response: Final = RedirectResponse(origin + destination, status_code=303)
         response.delete_cookie("antigravity_login_state", path="/antigravity")
         return response
 

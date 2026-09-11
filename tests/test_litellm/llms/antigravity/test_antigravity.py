@@ -376,7 +376,10 @@ def test_browser_login_pkce_state_and_replay(auth):
         assert client.post("/antigravity/login").status_code == 403
         assert client.post("/antigravity/login", headers={"origin": "null"}).status_code == 403
         assert client.post("/antigravity/login", headers={"origin": "https://example.com"}).status_code == 403
-        login = client.post("/antigravity/login", headers={"origin": "http://localhost:4000"})
+        login = client.post(
+            "/antigravity/login?return_to=/ui/models-and-endpoints%3Fantigravity%3Dconnected",
+            headers={"origin": "http://localhost:4000"},
+        )
         params = parse_qs(urlparse(login.headers["location"]).query)
         assert params["code_challenge_method"] == ["S256"]
         assert params["access_type"] == ["offline"]
@@ -390,6 +393,7 @@ def test_browser_login_pkce_state_and_replay(auth):
         callback = "/antigravity/callback?state=" + params["state"][0] + "&code=authorization-code"
         result = client.get(callback)
         assert result.status_code == 303
+        assert result.headers["location"] == "http://localhost:4000/ui/models-and-endpoints?antigravity=connected"
         assert auth.read().project_id == "signed-in-project"
         form = parse_qs(token.calls.last.request.content.decode())
         assert form["redirect_uri"] == params["redirect_uri"]

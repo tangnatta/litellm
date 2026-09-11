@@ -23,6 +23,12 @@ export ANTIGRAVITY_OAUTH_CLIENT_ID='<desktop-oauth-client-id>'
 export ANTIGRAVITY_OAUTH_CLIENT_SECRET='<desktop-oauth-client-secret>'
 ```
 
+Set a master key when using the standard LiteLLM dashboard. Sign in to `/ui` with username `admin` and this value as the password:
+
+```sh
+export LITELLM_MASTER_KEY='sk-change-this-local-key'
+```
+
 Build validation and tests can be run before starting the service:
 
 ```sh
@@ -41,6 +47,8 @@ LITELLM_LOCAL_MODEL_COST_MAP=True \
 To store account tokens somewhere other than the default directory, set `ANTIGRAVITY_AUTH_DIR` before starting the service.
 
 Open [the login page](http://localhost:4000/antigravity) in your regular browser and choose **Sign in with Google**. After consent, the page discovers your project and available models. If Google requires an existing Cloud project, enter its project ID and choose **Discover or save project**. Select a model and send a message from the same page
+
+The same connection controls are integrated into the standard LiteLLM dashboard at [Models & Endpoints](http://localhost:4000/ui/models-and-endpoints). Open the **Antigravity** tab to sign in, discover or change the project, refresh the callable model list, and inspect provider quota. OAuth returns directly to that dashboard tab
 
 The callback is `http://localhost:4000/antigravity/callback`. Use the same port and browser throughout login. A pending login expires after ten minutes or a server restart
 
