@@ -4,7 +4,9 @@ This provider connects LiteLLM directly to Google Code Assist using an Antigravi
 
 The pilot includes browser login with OAuth state and PKCE, local credential storage, refresh-token rotation, project discovery/onboarding, model discovery, and synchronous/asynchronous chat with streaming and tool calls
 
-Model discovery follows the Antigravity hosts and both catalog methods used by OmniRoute. It filters internal, retired, and non-chat entries, and uses a curated callable catalog when live discovery is unavailable. The request adapter also applies Antigravity model aliases, native request/session identity, generation limits, conversation cleanup, tool validation, and model-specific thinking rules
+Model discovery follows the Antigravity hosts and both catalog methods used by OmniRoute. It filters internal, retired, opaque, and non-chat entries, and uses a curated callable catalog when live discovery is unavailable. The request adapter also applies Antigravity model aliases, native request/session identity, generation limits, conversation cleanup, tool validation, and model-specific thinking rules
+
+The login page also reports subscription and quota data from the same Antigravity endpoints used by OmniRoute. It combines live per-model quota, catalog quota fallbacks, and weekly model-family limits. Results are cached for one minute; **Refresh usage** bypasses that cache
 
 ## Run locally
 
@@ -65,10 +67,23 @@ response = litellm.completion(
 
 Use `litellm.acompletion` for asynchronous calls and `stream=True` for streaming. Request `stream_options={"include_usage": True}` to receive token usage in the stream. Preserve the complete assistant tool-call message when sending tool results back so Google thought signatures survive
 
+The local management endpoints are:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /antigravity/status` | Connection and project status |
+| `POST /antigravity/login` / `GET /antigravity/callback` | OAuth login and callback |
+| `POST /antigravity/project` | Discover or save the Cloud project |
+| `GET /antigravity/models` | Callable model catalog with host fallback |
+| `GET /antigravity/usage` | Subscription, model quota, and weekly quota |
+| `GET /antigravity/usage?refresh=true` | Force a fresh quota check |
+
+LiteLLM's existing `/v1/chat/completions`, `/v1/responses`, `/v1/messages`, model-list, and Gemini-compatible proxy routes provide the public inference facades that OmniRoute exposes. The Antigravity provider handles the provider-specific request envelope and OAuth credentials behind those routes
+
 ## Pilot scope
 
 The bundled launcher binds to loopback, runs one worker, and exposes a local login page alongside the proxy. It is intended for one account on one computer. Credential refresh is coordinated within that process; shared credential files across multiple workers are not supported yet
 
-Runtime requests use the daily Cloud Code endpoint by default. A deployment can set `api_base: https://cloudcode-pa.googleapis.com` to use the standard endpoint. Runtime request failover, OmniRoute's database-backed multi-account routing and credit accounting, distributed account storage, remote login, and the remaining OmniRoute providers are follow-up work
+Runtime requests use the daily Cloud Code endpoint by default. A deployment can set `api_base: https://cloudcode-pa.googleapis.com` to use the standard endpoint. OmniRoute's database-backed multi-account routing and credit accounting, distributed account storage, and remote login are application infrastructure rather than provider endpoints and are outside this single-account local pilot
 
 OAuth client values must be supplied through the environment. The provider does not read another application's account files or embed client credentials. Live Google consent, account eligibility, and generation must be verified using the signed-in account; mocked tests do not establish live-provider compatibility

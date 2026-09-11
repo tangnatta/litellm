@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly, TypedDict
 
 from .authenticator import AntigravityError, Authenticator
+from .usage import get_usage
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,10 +148,21 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
         except AntigravityError as error:
             raise HTTPException(status_code=error.status_code, detail=error.message) from None
 
+    def usage(refresh: bool = False) -> JSONResponse:
+        try:
+            result: Final = get_usage(authenticator, force_refresh=refresh)
+            return JSONResponse(
+                result.model_dump(mode="json"),
+                headers=MappingProxyType({"Cache-Control": "no-store"}),
+            )
+        except AntigravityError as error:
+            raise HTTPException(status_code=error.status_code, detail=error.message) from None
+
     router.get("")(page)
     router.get("/status")(status)
     router.post("/login")(login)
     router.get("/callback")(callback)
     router.post("/project")(project)
     router.get("/models")(models)
+    router.get("/usage")(usage)
     return router

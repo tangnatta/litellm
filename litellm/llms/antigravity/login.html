@@ -16,6 +16,8 @@ body{font:16px/1.6 system-ui,sans-serif;background:#f4f6fa;color:#172238;margin:
 <h2>Try a message</h2><label for="model">Model</label><select id="model"><option value="">Loading models…</option></select>
 <p class="muted" id="model-count"></p>
 <button id="models">Refresh available models</button>
+<h2>Usage</h2><p class="muted">Quota is read from Antigravity and cached for one minute.</p>
+<button id="usage-refresh">Refresh usage</button><pre id="usage" aria-live="polite">Loading usage…</pre>
 <label for="prompt">Message</label><textarea id="prompt" rows="3">Reply with a short hello.</textarea>
 <button id="send">Send message</button><pre id="output" aria-live="polite">Your response will appear here.</pre>
 </section></main>
@@ -23,10 +25,13 @@ body{font:16px/1.6 system-ui,sans-serif;background:#f4f6fa;color:#172238;margin:
 const $=id=>document.getElementById(id);
 async function request(path,options={}){const r=await fetch(path,options);const data=await r.json();if(!r.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.error||data));return data}
 async function models(){const previous=$('model').value;const data=await request('/antigravity/models');$('model').replaceChildren(...data.models.map(name=>{const option=document.createElement('option');option.value=name;option.textContent=name;return option}));if(previous&&data.models.includes(previous))$('model').value=previous;$('model-count').textContent=data.models.length+' callable models available';if(!data.models.length)$('notice').textContent='No models were returned. Check your project and account access.'}
-async function status(){const data=await request('/antigravity/status');$('status').textContent=data.signed_in?(data.project_id?'Connected. Project: '+data.project_id:'Signed in. A Google Cloud project is still needed.'):'Not signed in yet';$('connected').hidden=!data.signed_in;$('project').value=data.project_id;if(data.project_id)await models()}
+function quotaLine(q){const left=q.unlimited?'Unlimited':q.remaining_percentage.toFixed(1)+'% remaining';return (q.display_name||q.id)+': '+left+(q.reset_at?' · resets '+new Date(q.reset_at).toLocaleString():'')}
+async function usage(refresh=false){const data=await request('/antigravity/usage'+(refresh?'?refresh=true':''));$('usage').textContent='Plan: '+data.plan+'\n'+(data.quotas.length?data.quotas.map(quotaLine).join('\n'):'No quota information was returned.')}
+async function status(){const data=await request('/antigravity/status');$('status').textContent=data.signed_in?(data.project_id?'Connected. Project: '+data.project_id:'Signed in. A Google Cloud project is still needed.'):'Not signed in yet';$('connected').hidden=!data.signed_in;$('project').value=data.project_id;if(data.project_id)await Promise.all([models(),usage()])}
 async function action(button,fn){button.disabled=true;$('notice').textContent='';try{await fn()}catch(e){$('notice').textContent=e.message}finally{button.disabled=false}}
 $('discover').onclick=()=>action($('discover'),async()=>{await request('/antigravity/project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:$('project').value.trim()})});await status()});
 $('models').onclick=()=>action($('models'),models);
+$('usage-refresh').onclick=()=>action($('usage-refresh'),()=>usage(true));
 $('send').onclick=()=>action($('send'),async()=>{if(!$('model').value.trim())throw Error('Choose a model first');$('output').textContent='Waiting for Antigravity…';const data=await request('/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'antigravity/'+$('model').value.trim().replace(/^antigravity\//,''),messages:[{role:'user',content:$('prompt').value}]})});$('output').textContent=data.choices?.[0]?.message?.content||JSON.stringify(data,null,2)});
 const outcome=new URLSearchParams(location.search).get('login');if(outcome==='cancelled')$('notice').textContent='Sign-in was cancelled. You can try again.';if(outcome==='needs_attention')$('notice').textContent='Login or project discovery needs attention. Check the connection below and retry.';history.replaceState(null,'','/antigravity');status().catch(e=>$('notice').textContent=e.message);
 </script></body></html>

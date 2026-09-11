@@ -67,6 +67,7 @@ _RETIRED_MODEL_IDS: Final = frozenset(
 _NON_CHAT_MODEL_PATTERN: Final = re.compile(
     r"(?:^|[-_])(image|imagen|audio|tts|embedding|embed|video|veo)(?:[-_]|$)", re.I
 )
+_INTERNAL_MODEL_PATTERN: Final = re.compile(r"^chat_\d+$", re.I)
 
 
 def resolve_model_id(model_id: str) -> str:
@@ -79,6 +80,7 @@ def is_discoverable_model(model_id: str, information: JsonValue) -> bool:
         and not (isinstance(information, dict) and information.get("isInternal") is True)
         and model_id not in _NON_CHAT_MODEL_IDS
         and model_id not in _RETIRED_MODEL_IDS
+        and _INTERNAL_MODEL_PATTERN.fullmatch(model_id) is None
         and _NON_CHAT_MODEL_PATTERN.search(model_id) is None
     )
 

@@ -17,13 +17,13 @@ from litellm.llms.antigravity.authenticator import (
     RUNTIME_URL,
     TOKEN_URL,
     AntigravityError,
-    Authenticator,
     Credentials,
     get_authenticator,
 )
-from litellm.llms.antigravity.models import PUBLIC_MODELS
 from litellm.llms.antigravity.chat.transformation import unwrap_lines
 from litellm.llms.antigravity.login import create_login_router
+from litellm.llms.antigravity.models import PUBLIC_MODELS
+from litellm.llms.antigravity.usage import get_usage
 
 
 @pytest.fixture
@@ -120,6 +120,49 @@ def test_model_discovery_uses_curated_fallback(auth):
     for url in DISCOVERY_URLS:
         respx.post(url).respond(503)
     assert auth.models() == PUBLIC_MODELS
+
+
+@respx.mock
+def test_usage_combines_live_catalog_and_weekly_quotas(auth):
+    respx.post(BOOTSTRAP_URL + "/v1internal:loadCodeAssist").respond(
+        200, json={"currentTier": {"id": "standard-tier", "name": "Antigravity"}}
+    )
+    respx.post(DISCOVERY_URLS[0]).respond(
+        200,
+        json={
+            "models": {
+                "gemini-pro-agent": {"quotaInfo": {"remainingFraction": 0.8, "resetTime": "2030-01-01T00:00:00Z"}},
+                "claude-sonnet-4-6": {"quotaInfo": {"remainingFraction": 0.4}},
+                "chat_20706": {"quotaInfo": {"remainingFraction": 1}},
+            }
+        },
+    )
+    respx.post(RUNTIME_URL + "/v1internal:retrieveUserQuota").respond(
+        200,
+        json={
+            "buckets": [{"modelId": "gemini-pro-agent", "remainingFraction": 0.25, "resetTime": "2030-01-02T00:00:00Z"}]
+        },
+    )
+    respx.post(RUNTIME_URL + "/v1internal:retrieveUserQuotaSummary").respond(
+        200,
+        json={
+            "groups": [
+                {
+                    "displayName": "Gemini Models",
+                    "buckets": [{"bucketId": "weekly", "remainingFraction": 0.1, "resetTime": 1893542400000}],
+                }
+            ]
+        },
+    )
+    result = get_usage(auth, force_refresh=True)
+    quotas = {quota.id: quota for quota in result.quotas}
+    assert result.plan == "Business"
+    assert result.project_id == "test-project"
+    assert quotas["gemini-pro-agent"].remaining_percentage == 25
+    assert quotas["gemini-pro-agent"].source == "retrieveUserQuota"
+    assert quotas["claude-sonnet-4-6"].unlimited is False
+    assert quotas["gemini_weekly"].remaining == 100
+    assert "chat_20706" not in quotas
 
 
 @respx.mock
