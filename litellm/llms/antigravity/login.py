@@ -9,12 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from typing_extensions import ReadOnly, TypedDict
+
+from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 
 from .authenticator import AntigravityError, Authenticator
 from .usage import get_usage
@@ -26,6 +28,7 @@ class LoginAttempt:
     verifier: str
     created_at: float
     return_to: str
+    account: str
 
 
 class LoginSessions:
@@ -33,11 +36,11 @@ class LoginSessions:
         self.attempts: MappingProxyType[str, LoginAttempt] = MappingProxyType({})
         self.lock = threading.Lock()
 
-    def create(self, return_to: str = "") -> LoginAttempt:
+    def create(self, account: str = "default", return_to: str = "") -> LoginAttempt:
         with self.lock:
             safe_return: Final = return_to if return_to.startswith("/ui") and not return_to.startswith("//") else ""
             attempt: Final = LoginAttempt(
-                secrets.token_urlsafe(32), secrets.token_urlsafe(64), time.monotonic(), safe_return
+                secrets.token_urlsafe(32), secrets.token_urlsafe(64), time.monotonic(), safe_return, account
             )
             recent: Final = tuple(a for a in self.attempts.values() if time.monotonic() - a.created_at < 600)[-31:]
             self.attempts = MappingProxyType({a.state: a for a in (*recent, attempt)})
@@ -78,15 +81,7 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
     sessions: Final = LoginSessions()
     redirect_uri: Final = origin + "/antigravity/callback"
 
-    def local_request(request: Request) -> None:
-        if request.client is None or request.client.host not in ("127.0.0.1", "::1"):
-            raise HTTPException(status_code=403, detail="Antigravity login is available on this computer only")
-        if request.headers.get("host") != urlparse(origin).netloc:
-            raise HTTPException(status_code=403, detail="Open the login page using the configured localhost URL")
-        if request.method == "POST" and request.headers.get("origin") != origin:
-            raise HTTPException(status_code=403, detail="Open the login page and retry")
-
-    router: Final = APIRouter(prefix="/antigravity", dependencies=(Depends(local_request),))
+    router: Final = APIRouter(prefix="/antigravity")
 
     def page() -> HTMLResponse:
         return HTMLResponse(
@@ -95,8 +90,10 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
             headers=MappingProxyType({"Cache-Control": "no-store", "Referrer-Policy": "same-origin"}),
         )
 
-    def status() -> JSONResponse:
-        credentials: Final = authenticator.read()
+    def status(
+        account: str = "default", _user: UserAPIKeyAuth = Depends(user_api_key_auth)
+    ) -> JSONResponse:
+        credentials: Final = authenticator.read(account)
         payload: Final[ConnectionStatus] = {
             "signed_in": credentials is not None and not credentials.requires_login,
             "project_id": credentials.project_id if credentials else "",
@@ -106,8 +103,10 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
             headers=MappingProxyType({"Cache-Control": "no-store"}),
         )
 
-    def login(return_to: str = "") -> RedirectResponse:
-        attempt: Final = sessions.create(return_to)
+    def login(request: Request, account: str = "default", return_to: str = "") -> RedirectResponse:
+        if request.headers.get("origin") != origin:
+            raise HTTPException(status_code=403, detail="Cross-origin login prohibited")
+        attempt: Final = sessions.create(account, return_to)
         challenge: Final = (
             base64.urlsafe_b64encode(hashlib.sha256(attempt.verifier.encode()).digest()).rstrip(b"=").decode()
         )
@@ -121,9 +120,9 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
         )
         return response
 
-    def finish_login(code: str, verifier: str) -> str:
+    def finish_login(code: str, verifier: str, account: str) -> str:
         try:
-            authenticator.exchange(code, redirect_uri, verifier)
+            authenticator.exchange(code, redirect_uri, verifier, account)
             return "connected"
         except AntigravityError:
             return "needs_attention"
@@ -132,30 +131,40 @@ def create_login_router(authenticator: Authenticator, origin: str) -> APIRouter:
         attempt: Final = sessions.consume(state, request.cookies.get("antigravity_login_state", ""))
         if error or not code:
             return RedirectResponse(origin + "/antigravity?login=cancelled", status_code=303)
-        outcome: Final = finish_login(code, attempt.verifier)
+        outcome: Final = finish_login(code, attempt.verifier, attempt.account)
         destination: Final = attempt.return_to or "/antigravity?login=" + outcome
         response: Final = RedirectResponse(origin + destination, status_code=303)
         response.delete_cookie("antigravity_login_state", path="/antigravity")
         return response
 
-    def project(body: ProjectRequest) -> JSONResponse:
+    def project(
+        body: ProjectRequest,
+        account: str = "default",
+        _user: UserAPIKeyAuth = Depends(user_api_key_auth),
+    ) -> JSONResponse:
         try:
-            credentials: Final = authenticator.discover_project(project_id=body.project_id)
+            credentials: Final = authenticator.discover_project(account=account, project_id=body.project_id)
             payload: Final[ProjectStatus] = {"project_id": credentials.project_id}
             return JSONResponse(payload)
         except AntigravityError as error:
             raise HTTPException(status_code=error.status_code, detail=error.message) from None
 
-    def models() -> JSONResponse:
+    def models(
+        account: str = "default", _user: UserAPIKeyAuth = Depends(user_api_key_auth)
+    ) -> JSONResponse:
         try:
-            payload: Final[ModelCatalog] = {"models": authenticator.models()}
+            payload: Final[ModelCatalog] = {"models": authenticator.models(account)}
             return JSONResponse(payload)
         except AntigravityError as error:
             raise HTTPException(status_code=error.status_code, detail=error.message) from None
 
-    def usage(refresh: bool = False) -> JSONResponse:
+    def usage(
+        account: str = "default",
+        refresh: bool = False,
+        _user: UserAPIKeyAuth = Depends(user_api_key_auth),
+    ) -> JSONResponse:
         try:
-            result: Final = get_usage(authenticator, force_refresh=refresh)
+            result: Final = get_usage(authenticator, account=account, force_refresh=refresh)
             return JSONResponse(
                 result.model_dump(mode="json"),
                 headers=MappingProxyType({"Cache-Control": "no-store"}),

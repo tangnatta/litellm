@@ -297,6 +297,8 @@ class CredentialLiteLLMParams(BaseModel):
 
     ## GENERIC OAUTH2 (refresh_token grant) ##
     oauth2_token_endpoint: str | None = None
+    antigravity_account: str | None = None
+    chatgpt_account: str | None = None
     oauth2_refresh_token: str | None = None
     oauth2_client_id: str | None = None
     oauth2_client_secret: str | None = None

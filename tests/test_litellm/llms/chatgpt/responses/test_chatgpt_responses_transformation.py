@@ -69,7 +69,9 @@ class TestChatGPTResponsesAPITransformation:
         mock_authenticator_class.return_value = mock_auth_instance
 
         config = ChatGPTResponsesAPIConfig()
-        litellm_params = GenericLiteLLMParams(litellm_session_id="session-123")
+        litellm_params = GenericLiteLLMParams(
+            litellm_session_id="session-123", chatgpt_account="work"
+        )
         headers = config.validate_environment(
             headers={"originator": "custom-origin"},
             model="gpt-5.2",
@@ -82,6 +84,8 @@ class TestChatGPTResponsesAPITransformation:
         assert headers["content-type"] == "application/json"
         assert headers["accept"] == "text/event-stream"
         assert headers["session_id"] == "session-123"
+        mock_auth_instance.get_access_token.assert_called_once_with(account="work")
+        mock_auth_instance.get_account_id.assert_called_once_with(account="work")
 
     @pytest.mark.parametrize(
         "model_name",

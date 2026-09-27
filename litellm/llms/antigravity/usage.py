@@ -230,10 +230,12 @@ def _weekly_quotas(data: Mapping[str, JsonValue] | None) -> tuple[Quota, ...]:
     return results
 
 
-def get_usage(authenticator: Authenticator, force_refresh: bool = False) -> UsageResult:
+def get_usage(authenticator: Authenticator, force_refresh: bool = False, account: str = "default") -> UsageResult:
     global _usage_cache
-    credentials: Final = authenticator.credentials()
-    cache_key: Final = hashlib.sha256(f"{credentials.access_token}:{credentials.project_id}".encode()).hexdigest()
+    credentials: Final = authenticator.credentials(account=account)
+    cache_key: Final = hashlib.sha256(
+        f"{account}:{credentials.access_token}:{credentials.project_id}".encode()
+    ).hexdigest()
     with _CACHE_LOCK:
         if (
             not force_refresh

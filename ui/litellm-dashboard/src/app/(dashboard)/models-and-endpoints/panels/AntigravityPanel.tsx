@@ -24,28 +24,30 @@ const formatQuota = (quota: Quota): string => {
   return `${quota.remaining_percentage.toFixed(1)}% remaining`;
 };
 
-export default function AntigravityPanel() {
+export default function AntigravityPanel({ accessToken }: { accessToken: string | null }) {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [projectId, setProjectId] = useState("");
   const [error, setError] = useState("");
+  const [account, setAccount] = useState("default");
+  const [activeAccount, setActiveAccount] = useState("default");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (forceUsage = false) => {
     setError("");
-    const connection = await apiClient.get<ConnectionStatus>("/antigravity/status");
+    const connection = await apiClient.get<ConnectionStatus>("/antigravity/status", { accessToken, query: { account: activeAccount } });
     setStatus(connection);
     setProjectId(connection.project_id);
     if (!connection.signed_in || !connection.project_id) return;
     const [catalog, quota] = await Promise.all([
-      apiClient.get<ModelCatalog>("/antigravity/models"),
-      apiClient.get<Usage>("/antigravity/usage", { query: { refresh: forceUsage } }),
+      apiClient.get<ModelCatalog>("/antigravity/models", { accessToken, query: { account: activeAccount } }),
+      apiClient.get<Usage>("/antigravity/usage", { accessToken, query: { refresh: forceUsage, account: activeAccount } }),
     ]);
     setModels(catalog.models);
     setUsage(quota);
-  }, []);
+  }, [accessToken, activeAccount]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -60,7 +62,7 @@ export default function AntigravityPanel() {
     setRefreshing(true);
     setError("");
     try {
-      await apiClient.post("/antigravity/project", { body: { project_id: projectId.trim() } });
+      await apiClient.post("/antigravity/project", { accessToken, query: { account: activeAccount }, body: { project_id: projectId.trim() } });
       await load(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -81,7 +83,7 @@ export default function AntigravityPanel() {
   };
 
   const returnTo = "/ui/models-and-endpoints?antigravity=connected";
-  const loginAction = `${proxyBaseUrl ?? ""}/antigravity/login?return_to=${encodeURIComponent(returnTo)}`;
+  const loginAction = `${proxyBaseUrl ?? ""}/antigravity/login?account=${encodeURIComponent(account)}&return_to=${encodeURIComponent(returnTo)}`;
 
   if (loading) return <p className="text-sm text-muted-foreground">Checking Antigravity connection…</p>;
 
@@ -108,13 +110,23 @@ export default function AntigravityPanel() {
             </p>
           )}
           {!status?.signed_in ? (
-            <form action={loginAction} method="post">
-              <Button type="submit" className="gap-2">
-                Sign in with Google <ExternalLink className="size-4" />
-              </Button>
-            </form>
+            <>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Account Profile Name</label>
+                <Input value={account} onChange={(e) => { setAccount(e.target.value); setActiveAccount(e.target.value); }} placeholder="default" className="mb-3" />
+              </div>
+              <form action={loginAction} method="post">
+                <Button type="submit" className="gap-2">
+                  Sign in with Google <ExternalLink className="size-4" />
+                </Button>
+              </form>
+            </>
           ) : (
             <>
+              <div className="mb-4 bg-muted/50 p-2 rounded-md">
+                <span className="text-sm font-semibold">Active Profile:</span> <span className="font-mono text-sm">{activeAccount}</span>
+                <Button variant="link" size="sm" onClick={() => { setActiveAccount("default"); setStatus(null); }}>Switch</Button>
+              </div>
               <div>
                 <label htmlFor="antigravity-project" className="mb-1 block text-sm font-medium">
                   Google Cloud project

@@ -18109,6 +18109,17 @@ async def get_routes():
 app.include_router(router)
 app.include_router(response_router)
 app.include_router(public_endpoints_router)
+try:
+    from litellm.llms.antigravity.authenticator import get_authenticator as get_anti_auth
+    from litellm.llms.antigravity.login import create_login_router as create_anti_router
+    _origin = os.getenv("LITELLM_PUBLIC_URL", "http://localhost:4000").rstrip("/")
+    app.include_router(create_anti_router(get_anti_auth(), _origin))
+
+    from litellm.llms.chatgpt.authenticator import Authenticator as ChatGPTAuthenticator
+    from litellm.llms.chatgpt.login import create_login_router as create_chatgpt_router
+    app.include_router(create_chatgpt_router(ChatGPTAuthenticator(), _origin))
+except ImportError as e:
+    verbose_proxy_logger.warning("Failed to mount native OAuth routers: %s", e)
 app.include_router(public_v1_router)
 app.include_router(rerank_router)
 app.include_router(ocr_router)

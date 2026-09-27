@@ -31,15 +31,8 @@ class ChatGPTConfig(OpenAIConfig):
         custom_llm_provider: str,
     ) -> tuple[str | None, str | None, str]:
         dynamic_api_base: Final = self.authenticator.get_api_base()
-        try:
-            dynamic_api_key: Final = self.authenticator.get_access_token()
-        except GetAccessTokenError as e:
-            raise AuthenticationError(
-                model=model,
-                llm_provider=custom_llm_provider,
-                message=str(e),
-            )
-        return dynamic_api_base, dynamic_api_key, custom_llm_provider
+        # DEFERRED: Auth token fetching is deferred until validate_environment
+        return dynamic_api_base, api_key, custom_llm_provider
 
     def validate_environment(
         self,
@@ -55,10 +48,30 @@ class ChatGPTConfig(OpenAIConfig):
             headers, model, messages, optional_params, litellm_params, api_key, api_base
         )
 
-        account_id: Final = self.authenticator.get_account_id()
+        account = str(litellm_params.get("chatgpt_account", "default"))
+        # Fetch lazily during request evaluation to avoid blocking proxy startup
+        try:
+            dynamic_api_key: str = self.authenticator.get_access_token(account=account)
+        except GetAccessTokenError as e:
+            raise AuthenticationError(
+                model=model,
+                llm_provider="chatgpt",
+                message=str(e),
+            )
+
+        account_id: Final = self.authenticator.get_account_id(account=account)
         session_id: Final = ensure_chatgpt_session_id(litellm_params)
-        default_headers: Final = get_chatgpt_default_headers(api_key or "", account_id, session_id)
-        return {**default_headers, **validated_headers}
+        default_headers: Final = get_chatgpt_default_headers(dynamic_api_key or "", account_id, session_id)
+        return {
+            **default_headers,
+            **validated_headers,
+            "Authorization": default_headers["Authorization"],
+            **(
+                {"ChatGPT-Account-Id": default_headers["ChatGPT-Account-Id"]}
+                if "ChatGPT-Account-Id" in default_headers
+                else {}
+            ),
+        }
 
     def post_stream_processing(self, stream: Any) -> Any:
         return ChatGPTToolCallNormalizer(stream)

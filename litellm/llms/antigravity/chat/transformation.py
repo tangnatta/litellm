@@ -300,7 +300,8 @@ class AntigravityConfig(BaseConfig):
         api_key: str | None = None,
         api_base: str | None = None,
     ) -> dict[str, str]:  # mutable-ok: BaseConfig requires a headers dictionary return value
-        credentials: Final = self.authenticator.credentials()
+        account: Final = str(litellm_params.get("antigravity_account", "default"))
+        credentials: Final = self.authenticator.credentials(account=account)
         return MappingProxyType(
             {
                 **(headers or MappingProxyType({})),
@@ -328,7 +329,8 @@ class AntigravityConfig(BaseConfig):
         litellm_params: Mapping[str, JsonValue],
         headers: Mapping[str, str],
     ) -> dict[str, JsonValue]:  # mutable-ok: BaseConfig requires a JSON dictionary return value
-        credentials: Final = self.authenticator.credentials()
+        account = str(litellm_params.get("antigravity_account", "default"))
+        credentials: Final = self.authenticator.credentials(account=account)
         upstream_model: Final = resolve_model_id(model)
         request: Final = _OBJECT.validate_python(
             _transform_request_body(

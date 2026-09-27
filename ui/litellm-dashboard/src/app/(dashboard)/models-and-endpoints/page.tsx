@@ -26,6 +26,7 @@ import ModelGroupAliasPanel from "@/app/(dashboard)/models-and-endpoints/panels/
 import AccessGroupBudgetsPanel from "@/app/(dashboard)/models-and-endpoints/panels/AccessGroupBudgetsPanel";
 import PriceDataPanel from "@/app/(dashboard)/models-and-endpoints/panels/PriceDataPanel";
 import AntigravityPanel from "@/app/(dashboard)/models-and-endpoints/panels/AntigravityPanel";
+import ChatGPTPanel from "@/app/(dashboard)/models-and-endpoints/panels/ChatGPTPanel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -39,7 +40,8 @@ type ModelTabSlug =
   | "model-group-alias"
   | "access-group-budgets"
   | "price-data"
-  | "antigravity";
+  | "antigravity"
+  | "chatgpt";
 
 const BASE_TAB_KEY = "all-models";
 
@@ -54,9 +56,10 @@ const TAB_LABELS: Record<ModelTabSlug, string> = {
   "access-group-budgets": "Model Access Group Budgets",
   "price-data": "Price Data Reload",
   antigravity: "Antigravity",
+  chatgpt: "ChatGPT",
 };
 
-const renderPanel = (key: string) => {
+const renderPanel = (key: string, accessToken: string | null) => {
   switch (key) {
     case BASE_TAB_KEY:
       return <AllModelsPanel />;
@@ -79,7 +82,9 @@ const renderPanel = (key: string) => {
     case "price-data":
       return <PriceDataPanel />;
     case "antigravity":
-      return <AntigravityPanel />;
+      return <AntigravityPanel accessToken={accessToken} />;
+    case "chatgpt":
+      return <ChatGPTPanel accessToken={accessToken} />;
     default:
       return null;
   }
@@ -123,6 +128,7 @@ export default function ModelsAndEndpointsPage() {
             "access-group-budgets",
             "price-data",
             "antigravity",
+            "chatgpt",
           ] as const)
         : []),
     ],
@@ -222,7 +228,7 @@ export default function ModelsAndEndpointsPage() {
               const key = slug || BASE_TAB_KEY;
               return (
                 <TabsContent key={key} value={key} className="pt-4">
-                  {renderPanel(key)}
+                  {renderPanel(key, accessToken)}
                 </TabsContent>
               );
             })}

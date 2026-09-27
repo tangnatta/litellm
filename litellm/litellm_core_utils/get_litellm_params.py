@@ -35,11 +35,17 @@ GENERIC_OAUTH2_KWARGS_KEYS: Final = frozenset(
         "oauth2_auth_style",
     }
 )
+PROVIDER_ACCOUNT_KWARGS_KEYS: Final = frozenset({"antigravity_account", "chatgpt_account"})
 
 # Keys `completion()` forwards from its own kwargs into `get_litellm_params`,
 # which are otherwise invisible to it because that call site passes explicit
 # named arguments rather than `**kwargs`.
-FORWARDED_KWARGS_KEYS: Final = AWS_CREDENTIAL_KWARGS_KEYS | frozenset({RUST_KWARG_KEY}) | GENERIC_OAUTH2_KWARGS_KEYS
+FORWARDED_KWARGS_KEYS: Final = (
+    AWS_CREDENTIAL_KWARGS_KEYS
+    | frozenset({RUST_KWARG_KEY})
+    | GENERIC_OAUTH2_KWARGS_KEYS
+    | PROVIDER_ACCOUNT_KWARGS_KEYS
+)
 
 # Pre-define optional kwargs keys as frozenset for O(1) lookups
 # These are extracted from kwargs only if present, avoiding unnecessary .get() calls
@@ -78,6 +84,7 @@ OPTIONAL_KWARGS_KEYS: Final = (
     )
     | AWS_CREDENTIAL_KWARGS_KEYS
     | GENERIC_OAUTH2_KWARGS_KEYS
+    | PROVIDER_ACCOUNT_KWARGS_KEYS
 )
 
 # Backward-compatible alias for existing imports/tests.

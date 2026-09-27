@@ -48,7 +48,8 @@ class ChatGPTResponsesAPIConfig(OpenAIResponsesAPIConfig):
         litellm_params: GenericLiteLLMParams | None,
     ) -> dict:
         try:
-            access_token: Final = self.authenticator.get_access_token()
+            account: Final = str((litellm_params or {}).get("chatgpt_account", "default"))
+            access_token: Final = self.authenticator.get_access_token(account=account)
         except GetAccessTokenError as e:
             raise AuthenticationError(
                 model=model,
@@ -56,7 +57,7 @@ class ChatGPTResponsesAPIConfig(OpenAIResponsesAPIConfig):
                 message=str(e),
             )
 
-        account_id: Final = self.authenticator.get_account_id()
+        account_id: Final = self.authenticator.get_account_id(account=account)
         session_id: Final = ensure_chatgpt_session_id(litellm_params)
         default_headers: Final = get_chatgpt_default_headers(access_token, account_id, session_id)
         return {**default_headers, **headers}

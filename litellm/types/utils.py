@@ -3701,6 +3701,8 @@ all_litellm_params = (
         "enable_json_schema_validation",
         "use_xai_oauth",
         "oauth2_token_endpoint",
+        "antigravity_account",
+        "chatgpt_account",
         "oauth2_refresh_token",
         "oauth2_client_id",
         "oauth2_client_secret",
