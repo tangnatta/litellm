@@ -549,6 +549,16 @@ Provider API keys live in Secret Manager; reference resource IDs (e.g. `projects
 
 The Terraform modules live at [`terraform/litellm/aws/`](./terraform/litellm/aws/) and [`terraform/litellm/gcp/`](./terraform/litellm/gcp/) in this repo; the registry entries are read-only mirrors updated on each release.
 
+### Docker deployment with OAuth providers
+
+This branch includes a Docker Compose deployment for the Antigravity and ChatGPT OAuth providers, persistent credentials, PostgreSQL, and the standard LiteLLM dashboard. See the [OAuth Docker deployment guide](./litellm/llms/antigravity/README.md#docker-deployment).
+
+```sh
+cp .env.oauth.example .env.oauth
+# Edit .env.oauth, then:
+docker compose --env-file .env.oauth -f docker-compose.oauth.yml up -d --build
+```
+
 ### Run in Developer Mode
 #### Services
 1. Setup .env file in root

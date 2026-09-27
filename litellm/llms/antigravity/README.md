@@ -54,6 +54,52 @@ The callback is `http://localhost:4000/antigravity/callback`. Use the same port 
 
 Credentials are stored in `~/.config/litellm/antigravity/default.json` with owner-only permissions. Set `ANTIGRAVITY_AUTH_DIR` to choose a different directory. The OAuth client that issued the credentials is saved with them and reused during refresh
 
+## Docker deployment
+
+The repository includes `docker-compose.oauth.yml`, which builds the production LiteLLM image from this branch and starts it with PostgreSQL. PostgreSQL enables the standard admin dashboard, while a separate named volume persists Antigravity and ChatGPT OAuth credentials across container replacements.
+
+Create the deployment environment from the example and replace every `change-me` value:
+
+```sh
+cp .env.oauth.example .env.oauth
+```
+
+For a remote deployment, set `LITELLM_PUBLIC_URL` to the externally reachable HTTPS origin, without a trailing slash. Register this callback with the Antigravity OAuth application:
+
+```text
+https://your-litellm-host.example/antigravity/callback
+```
+
+Build and start the full deployment:
+
+```sh
+docker compose --env-file .env.oauth -f docker-compose.oauth.yml up -d --build
+docker compose --env-file .env.oauth -f docker-compose.oauth.yml ps
+```
+
+Open `LITELLM_PUBLIC_URL/ui`, sign in with username `admin` and the configured `LITELLM_MASTER_KEY`, then use the **Antigravity** or **ChatGPT** tab under **Models & Endpoints**. OAuth tokens are stored in the `oauth_credentials` Docker volume. Dashboard and model configuration data are stored in `oauth_postgres`.
+
+To inspect startup or OAuth errors:
+
+```sh
+docker compose --env-file .env.oauth -f docker-compose.oauth.yml logs -f litellm
+```
+
+To rebuild after pulling updates while preserving both volumes:
+
+```sh
+git pull
+docker compose --env-file .env.oauth -f docker-compose.oauth.yml up -d --build
+```
+
+To stop the deployment without deleting credentials or database data:
+
+```sh
+docker compose --env-file .env.oauth -f docker-compose.oauth.yml down
+```
+
+Do not add `--volumes` to that command unless you intend to permanently delete saved OAuth accounts and dashboard data.
+
 ## API and SDK
 
 The pilot runs the actual LiteLLM proxy with a wildcard deployment. Use a model ID discovered on the login page:

@@ -1,0 +1,17 @@
+model_list:
+  - model_name: antigravity/*
+    litellm_params:
+      model: antigravity/*
+      timeout: 120
+      max_retries: 0
+  - model_name: chatgpt/*
+    litellm_params:
+      model: chatgpt/*
+      timeout: 120
+      max_retries: 0
+
+litellm_settings:
+  telemetry: false
+
+general_settings:
+  disable_spend_logs: true

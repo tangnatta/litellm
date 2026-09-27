@@ -26,6 +26,7 @@ COPY ui/litellm-dashboard/package.json ui/litellm-dashboard/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline
 
 COPY ui/litellm-dashboard/ ./
+COPY litellm/proxy/public_endpoints/autorouter_presets.json /litellm/proxy/public_endpoints/autorouter_presets.json
 RUN npm run build
 
 # Builder stage

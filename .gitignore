@@ -144,6 +144,7 @@ crash.*.log
 
 # pytest coverage data
 .coverage
+.env.oauth
 
 ui/litellm-dashboard/out/
 litellm.log
