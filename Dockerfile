@@ -38,7 +38,8 @@ USER root
 COPY --from=uvbin /uv /usr/local/bin/uv
 COPY --from=uvbin /uvx /usr/local/bin/uvx
 
-RUN apk add --no-cache \
+RUN echo "https://packages.wolfi.dev/os" >> /etc/apk/repositories && \
+    apk add --no-cache \
     bash \
     gcc \
     python-3.13 \
